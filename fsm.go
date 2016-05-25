@@ -53,7 +53,7 @@ type FSM struct {
 
 	// transition is the internal transition functions used either directly
 	// or when Transition is called in an asynchronous state transition.
-	transition func()
+	transition func() error
 
 	// transitionerObj calls the FSM's transition() function.
 	transitionerObj transitioner
@@ -79,7 +79,7 @@ type EventDesc struct {
 
 // Callback is a function type that callbacks should use. Event is the current
 // event info as the callback happens.
-type Callback func(*Event)
+type Callback func(*Event) error
 
 // Events is a shorthand for defining the transition map in NewFSM.
 type Events []EventDesc
@@ -238,17 +238,17 @@ func (f *FSM) Cannot(event string) bool {
 // internal bug.
 func (f *FSM) Event(event string, args ...interface{}) error {
 	if f.transition != nil {
-		return &InTransitionError{event}
+		return InTransitionError{event}
 	}
 
 	dst, ok := f.transitions[eKey{event, f.current}]
 	if !ok {
 		for ekey := range f.transitions {
 			if ekey.event == event {
-				return &InvalidEventError{event, f.current}
+				return InvalidEventError{event, f.current}
 			}
 		}
-		return &UnknownEventError{event}
+		return UnknownEventError{event}
 	}
 
 	e := &Event{f, event, f.current, dst, nil, args, false, false}
@@ -259,15 +259,26 @@ func (f *FSM) Event(event string, args ...interface{}) error {
 	}
 
 	if f.current == dst {
-		f.afterEventCallbacks(e)
-		return &NoTransitionError{e.Err}
+		err := f.afterEventCallbacks(e)
+		if err != nil {
+			return err
+		} else {
+			return NoTransitionError{e.Err}
+		}
 	}
 
 	// Setup the transition, call it later.
-	f.transition = func() {
+	f.transition = func() error {
+		err := f.enterStateCallbacks(e)
+		if err != nil {
+			return err
+		}
 		f.current = dst
-		f.enterStateCallbacks(e)
-		f.afterEventCallbacks(e)
+		err = f.afterEventCallbacks(e)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	err = f.leaveStateCallbacks(e)
@@ -278,10 +289,10 @@ func (f *FSM) Event(event string, args ...interface{}) error {
 	// Perform the rest of the transition, if not asynchronous.
 	err = f.Transition()
 	if err != nil {
-		return &InternalError{}
+		return err
 	}
 
-	return e.Err
+	return nil
 }
 
 // Transition wraps transitioner.transition.
@@ -295,9 +306,13 @@ func (f *FSM) Transition() error {
 // event to have initiated an asynchronous state transition.
 func (t transitionerStruct) transition(f *FSM) error {
 	if f.transition == nil {
-		return &NotInTransitionError{}
+		return NotInTransitionError{}
 	}
-	f.transition()
+	err := f.transition()
+	if err != nil {
+		f.transition = nil
+		return err
+	}
 	f.transition = nil
 	return nil
 }
@@ -306,15 +321,21 @@ func (t transitionerStruct) transition(f *FSM) error {
 // general version.
 func (f *FSM) beforeEventCallbacks(e *Event) error {
 	if fn, ok := f.callbacks[cKey{e.Event, callbackBeforeEvent}]; ok {
-		fn(e)
+		err := fn(e)
+		if err != nil {
+			return err
+		}
 		if e.canceled {
-			return &CanceledError{e.Err}
+			return CanceledError{e.Err}
 		}
 	}
 	if fn, ok := f.callbacks[cKey{"", callbackBeforeEvent}]; ok {
-		fn(e)
+		err := fn(e)
+		if err != nil {
+			return err
+		}
 		if e.canceled {
-			return &CanceledError{e.Err}
+			return CanceledError{e.Err}
 		}
 	}
 	return nil
@@ -324,21 +345,27 @@ func (f *FSM) beforeEventCallbacks(e *Event) error {
 // general version.
 func (f *FSM) leaveStateCallbacks(e *Event) error {
 	if fn, ok := f.callbacks[cKey{f.current, callbackLeaveState}]; ok {
-		fn(e)
+		err := fn(e)
+		if err != nil {
+			return err
+		}
 		if e.canceled {
 			f.transition = nil
-			return &CanceledError{e.Err}
+			return CanceledError{e.Err}
 		} else if e.async {
-			return &AsyncError{e.Err}
+			return AsyncError{e.Err}
 		}
 	}
 	if fn, ok := f.callbacks[cKey{"", callbackLeaveState}]; ok {
-		fn(e)
+		err := fn(e)
+		if err != nil {
+			return err
+		}
 		if e.canceled {
 			f.transition = nil
-			return &CanceledError{e.Err}
+			return CanceledError{e.Err}
 		} else if e.async {
-			return &AsyncError{e.Err}
+			return AsyncError{e.Err}
 		}
 	}
 	return nil
@@ -346,24 +373,26 @@ func (f *FSM) leaveStateCallbacks(e *Event) error {
 
 // enterStateCallbacks calls the enter_ callbacks, first the named then the
 // general version.
-func (f *FSM) enterStateCallbacks(e *Event) {
+func (f *FSM) enterStateCallbacks(e *Event) error {
 	if fn, ok := f.callbacks[cKey{f.current, callbackEnterState}]; ok {
-		fn(e)
+		return fn(e)
 	}
 	if fn, ok := f.callbacks[cKey{"", callbackEnterState}]; ok {
-		fn(e)
+		return fn(e)
 	}
+	return nil
 }
 
 // afterEventCallbacks calls the after_ callbacks, first the named then the
 // general version.
-func (f *FSM) afterEventCallbacks(e *Event) {
+func (f *FSM) afterEventCallbacks(e *Event) error {
 	if fn, ok := f.callbacks[cKey{e.Event, callbackAfterEvent}]; ok {
-		fn(e)
+		return fn(e)
 	}
 	if fn, ok := f.callbacks[cKey{"", callbackAfterEvent}]; ok {
-		fn(e)
+		return fn(e)
 	}
+	return nil
 }
 
 const (

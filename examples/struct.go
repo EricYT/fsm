@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/EricYT/fsm"
@@ -34,7 +35,7 @@ func NewDoor(to string) *Door {
 
 func (d *Door) enterState(e *fsm.Event) error {
 	fmt.Printf("The door to %s is %s\n", d.To, e.Dst)
-	return nil
+	return errors.New("crash")
 }
 
 func main() {

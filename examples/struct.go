@@ -4,7 +4,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/looplab/fsm"
+
+	"github.com/EricYT/fsm"
 )
 
 type Door struct {
@@ -24,15 +25,16 @@ func NewDoor(to string) *Door {
 			{Name: "close", Src: []string{"open"}, Dst: "closed"},
 		},
 		fsm.Callbacks{
-			"enter_state": func(e *fsm.Event) { d.enterState(e) },
+			"enter_state": func(e *fsm.Event) error { return d.enterState(e) },
 		},
 	)
 
 	return d
 }
 
-func (d *Door) enterState(e *fsm.Event) {
+func (d *Door) enterState(e *fsm.Event) error {
 	fmt.Printf("The door to %s is %s\n", d.To, e.Dst)
+	return nil
 }
 
 func main() {

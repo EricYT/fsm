@@ -4,7 +4,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/looplab/fsm"
+
+	"github.com/EricYT/fsm"
 )
 
 func main() {
@@ -18,17 +19,21 @@ func main() {
 			{Name: "finish", Src: []string{"scanning"}, Dst: "idle"},
 		},
 		fsm.Callbacks{
-			"scan": func(e *fsm.Event) {
+			"scan": func(e *fsm.Event) error {
 				fmt.Println("after_scan: " + e.FSM.Current())
+				return nil
 			},
-			"working": func(e *fsm.Event) {
+			"working": func(e *fsm.Event) error {
 				fmt.Println("working: " + e.FSM.Current())
+				return nil
 			},
-			"situation": func(e *fsm.Event) {
+			"situation": func(e *fsm.Event) error {
 				fmt.Println("situation: " + e.FSM.Current())
+				return nil
 			},
-			"finish": func(e *fsm.Event) {
+			"finish": func(e *fsm.Event) error {
 				fmt.Println("finish: " + e.FSM.Current())
+				return nil
 			},
 		},
 	)
